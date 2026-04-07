@@ -6,8 +6,8 @@
 
 #pragma comment(lib, "psapi.lib")
 
-// Handle to the real winmm.dll
-HMODULE g_hReal = NULL;
+// Handle to the real winmm.dll (defined in dllmain.c)
+extern HMODULE g_hReal;
 
 // Typedefs for original functions
 typedef BOOL (WINAPI *PlaySoundW_t)(LPCWSTR, HMODULE, DWORD);
@@ -51,6 +51,9 @@ static void load_original_functions(void) {
     fp_PlaySoundW = (PlaySoundW_t)GetProcAddress(g_hReal, "PlaySoundW");
     fp_PlaySoundA = (PlaySoundA_t)GetProcAddress(g_hReal, "PlaySoundA");
 }
+
+// Forward declaration
+void load_all_original_functions(void);
 
 // Find pattern in memory
 static LPVOID find_pattern(LPBYTE start, SIZE_T size, const BYTE *pattern, const CHAR *mask) {
@@ -155,6 +158,9 @@ DWORD WINAPI NavicatPatchThread(LPVOID lpParam) {
 void hooks_init(void) {
     // Load original winmm.dll
     load_original_dll();
+
+    // Load all forwarded function pointers
+    load_all_original_functions();
 
     // Check if we're running in navicat.exe
     char exePath[MAX_PATH];
