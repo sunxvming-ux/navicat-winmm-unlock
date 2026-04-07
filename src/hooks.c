@@ -214,6 +214,117 @@ static BOOL patch_navicat17(void) {
         }
     }
 
+    // Pattern 5: Common license validation - checking some flag at offset
+    // 40 53 48 83 EC 20 83 79 ?? 00 (check if flag at offset is 0)
+    BYTE pattern5[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x83, 0x79, 0x00, 0x00};
+    CHAR mask5[] = "xxxxxxxxx?x";
+    pattern5[8] = 0x08;  // offset 8
+
+    LPVOID addr5 = find_pattern(baseAddr, size, pattern5, mask5, "LicenseFlag_Check_v1");
+    if (addr5) {
+        DWORD oldProtect;
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};  // mov eax, 1; ret
+        if (VirtualProtect(addr5, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(addr5, patch, sizeof(patch));
+            VirtualProtect(addr5, sizeof(patch), oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr5, sizeof(patch));
+            log_message("Pattern 5 patched successfully!");
+            patched = TRUE;
+        }
+    }
+
+    // Pattern 6: Common function with 48 8B 05 (mov rax, cs:...) for global check
+    // 48 8B 05 ?? ?? ?? ?? 48 85 C0 74 ?? (check if global pointer is null)
+    BYTE pattern6[] = {0x48, 0x8B, 0x05, 0x00, 0x00, 0x00, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x00};
+    CHAR mask6[] = "xxx????xxxx?";
+    pattern6[11] = 0x05;  // short jump offset
+
+    LPVOID addr6 = find_pattern(baseAddr, size, pattern6, mask6, "GlobalPtr_Check");
+    if (addr6) {
+        DWORD oldProtect;
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
+        if (VirtualProtect(addr6, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(addr6, patch, sizeof(patch));
+            VirtualProtect(addr6, sizeof(patch), oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr6, sizeof(patch));
+            log_message("Pattern 6 patched successfully!");
+            patched = TRUE;
+        }
+    }
+
+    // Pattern 7: Function that checks byte at offset and returns
+    // 48 89 5C 24 08 57 48 83 EC 30 48 8B F9 48 8B DA 48 8B 89
+    BYTE pattern7[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xF9};
+    CHAR mask7[] = "xxxxxxxxxxxxx";
+
+    LPVOID addr7 = find_pattern(baseAddr, size, pattern7, mask7, "LicenseCheck_v3");
+    if (addr7) {
+        DWORD oldProtect;
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
+        if (VirtualProtect(addr7, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(addr7, patch, sizeof(patch));
+            VirtualProtect(addr7, sizeof(patch), oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr7, sizeof(patch));
+            log_message("Pattern 7 patched successfully!");
+            patched = TRUE;
+        }
+    }
+
+    // Pattern 8: Alternative trial check with different prologue
+    // 48 83 EC 28 80 79 08 00 (sub rsp, 28h; cmp byte ptr [rcx+8], 0)
+    BYTE pattern8[] = {0x48, 0x83, 0xEC, 0x28, 0x80, 0x79, 0x08, 0x00};
+    CHAR mask8[] = "xxxxxxxx";
+
+    LPVOID addr8 = find_pattern(baseAddr, size, pattern8, mask8, "TrialCheck_v2");
+    if (addr8) {
+        DWORD oldProtect;
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
+        if (VirtualProtect(addr8, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(addr8, patch, sizeof(patch));
+            VirtualProtect(addr8, sizeof(patch), oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr8, sizeof(patch));
+            log_message("Pattern 8 patched successfully!");
+            patched = TRUE;
+        }
+    }
+
+    // Pattern 9: Check for specific license status byte
+    // 48 89 4C 24 08 48 83 EC 28 48 8B 49 08 48 85 C9
+    BYTE pattern9[] = {0x48, 0x89, 0x4C, 0x24, 0x08, 0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x49, 0x08, 0x48, 0x85, 0xC9};
+    CHAR mask9[] = "xxxxxxxxxxxxxxxx";
+
+    LPVOID addr9 = find_pattern(baseAddr, size, pattern9, mask9, "LicenseStatus_Check");
+    if (addr9) {
+        DWORD oldProtect;
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
+        if (VirtualProtect(addr9, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(addr9, patch, sizeof(patch));
+            VirtualProtect(addr9, sizeof(patch), oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr9, sizeof(patch));
+            log_message("Pattern 9 patched successfully!");
+            patched = TRUE;
+        }
+    }
+
+    // Pattern 10: Simple function that checks a byte and returns bool
+    // 0F B6 41 08 (movzx eax, byte ptr [rcx+8])
+    // Followed by C3 (ret)
+    BYTE pattern10[] = {0x0F, 0xB6, 0x41, 0x08, 0xC3};
+    CHAR mask10[] = "xxxxx";
+
+    LPVOID addr10 = find_pattern(baseAddr, size, pattern10, mask10, "SimpleByte_Check");
+    if (addr10) {
+        DWORD oldProtect;
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};  // mov eax, 1; ret
+        if (VirtualProtect(addr10, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(addr10, patch, sizeof(patch));
+            VirtualProtect(addr10, sizeof(patch), oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr10, sizeof(patch));
+            log_message("Pattern 10 patched successfully!");
+            patched = TRUE;
+        }
+    }
+
     if (!patched) {
         log_message("WARNING: No patterns were found or patched!");
     }
