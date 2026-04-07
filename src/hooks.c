@@ -6,7 +6,7 @@
 
 #pragma comment(lib, "psapi.lib")
 
-// Handle to the real winmm.dll (defined in dllmain.c)
+// Global handle to original winmm.dll - defined in dllmain.c
 extern HMODULE g_hReal;
 
 // Typedefs for original functions
@@ -16,14 +16,8 @@ typedef BOOL (WINAPI *PlaySoundA_t)(LPCSTR, HMODULE, DWORD);
 static PlaySoundW_t fp_PlaySoundW = NULL;
 static PlaySoundA_t fp_PlaySoundA = NULL;
 
-// Function prototypes for original winmm functions
-static void load_original_functions(void);
-
-// Find pattern in memory
-static LPVOID find_pattern(LPBYTE start, SIZE_T size, const BYTE *pattern, const CHAR *mask);
-
-// Patch Navicat memory
-static BOOL patch_navicat(void);
+// Forward declaration
+void load_all_original_functions(void);
 
 // Get original DLL path and load it
 static void load_original_dll(void) {
@@ -36,24 +30,14 @@ static void load_original_dll(void) {
     }
 
     if (!g_hReal) {
-        // Fallback to current directory
         g_hReal = LoadLibraryA("winmm_orig.dll");
     }
 
     if (g_hReal) {
-        load_original_functions();
+        fp_PlaySoundW = (PlaySoundW_t)GetProcAddress(g_hReal, "PlaySoundW");
+        fp_PlaySoundA = (PlaySoundA_t)GetProcAddress(g_hReal, "PlaySoundA");
     }
 }
-
-static void load_original_functions(void) {
-    if (!g_hReal) return;
-
-    fp_PlaySoundW = (PlaySoundW_t)GetProcAddress(g_hReal, "PlaySoundW");
-    fp_PlaySoundA = (PlaySoundA_t)GetProcAddress(g_hReal, "PlaySoundA");
-}
-
-// Forward declaration
-void load_all_original_functions(void);
 
 // Find pattern in memory
 static LPVOID find_pattern(LPBYTE start, SIZE_T size, const BYTE *pattern, const CHAR *mask) {
@@ -74,12 +58,11 @@ static LPVOID find_pattern(LPBYTE start, SIZE_T size, const BYTE *pattern, const
     return NULL;
 }
 
-// Patch Navicat - the main unlock logic
-static BOOL patch_navicat(void) {
+// Patch for Navicat 17
+static BOOL patch_navicat17(void) {
     HMODULE hNavicat = GetModuleHandle(NULL);
     if (!hNavicat) return FALSE;
 
-    // Get module information
     MODULEINFO modInfo;
     if (!GetModuleInformation(GetCurrentProcess(), hNavicat, &modInfo, sizeof(modInfo))) {
         return FALSE;
@@ -87,70 +70,89 @@ static BOOL patch_navicat(void) {
 
     LPBYTE baseAddr = (LPBYTE)modInfo.lpBaseOfDll;
     SIZE_T size = modInfo.SizeOfImage;
+    BOOL patched = FALSE;
 
-    // Pattern 1: Navicat 16+ trial check patch
-    // This pattern targets the license validation check
+    // Navicat 17 Pattern 1: License check function
+    // 48 89 5C 24 08 57 48 83 EC 20 48 8B F9 80 79 08 00
     BYTE pattern1[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xF9};
     CHAR mask1[] = "xxxxxxxxxxxxx";
 
     LPVOID addr1 = find_pattern(baseAddr, size, pattern1, mask1);
     if (addr1) {
-        // Found pattern, apply patch
         DWORD oldProtect;
-        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3}; // mov eax, 1; ret
-
+        // xor eax, eax; inc eax; ret (return TRUE)
+        BYTE patch[] = {0x31, 0xC0, 0x48, 0xFF, 0xC0, 0xC3};
         if (VirtualProtect(addr1, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
             memcpy(addr1, patch, sizeof(patch));
             VirtualProtect(addr1, sizeof(patch), oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), addr1, sizeof(patch));
+            patched = TRUE;
         }
     }
 
-    // Pattern 2: License key validation bypass
-    BYTE pattern2[] = {0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x68, 0x10};
-    CHAR mask2[] = "xxxxxxxxxxx";
+    // Navicat 17 Pattern 2: Trial check bypass
+    // 40 53 48 83 EC 20 80 79 08 00 48 8B D9
+    BYTE pattern2[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x80, 0x79, 0x08, 0x00};
+    CHAR mask2[] = "xxxxxxxxxx";
 
     LPVOID addr2 = find_pattern(baseAddr, size, pattern2, mask2);
     if (addr2) {
         DWORD oldProtect;
-        // Patch to always return success
-        BYTE patch[] = {0x31, 0xC0, 0x48, 0xFF, 0xC0, 0xC3}; // xor eax, eax; inc rax; ret
-
+        // mov eax, 1; ret
+        BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
         if (VirtualProtect(addr2, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
             memcpy(addr2, patch, sizeof(patch));
             VirtualProtect(addr2, sizeof(patch), oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), addr2, sizeof(patch));
+            patched = TRUE;
         }
     }
 
-    // Pattern 3: Premium feature unlock
-    BYTE pattern3[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8};
-    CHAR mask3[] = "xxxxxxxxxx";
+    // Navicat 17 Pattern 3: IsPremium check
+    // 48 89 5C 24 08 57 48 83 EC 20 48 8B 59 10 48 8B F9
+    BYTE pattern3[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x59, 0x10};
+    CHAR mask3[] = "xxxxxxxxxxxxxx";
 
     LPVOID addr3 = find_pattern(baseAddr, size, pattern3, mask3);
     if (addr3) {
         DWORD oldProtect;
+        // mov eax, 1; ret
         BYTE patch[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
-
         if (VirtualProtect(addr3, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
             memcpy(addr3, patch, sizeof(patch));
             VirtualProtect(addr3, sizeof(patch), oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), addr3, sizeof(patch));
+            patched = TRUE;
         }
     }
 
-    return TRUE;
+    return patched;
+}
+
+// Simple log function for debugging
+static void log_message(const char* msg) {
+    FILE* f = fopen("C:\\temp\\navicat_patch.log", "a");
+    if (f) {
+        fprintf(f, "%s\n", msg);
+        fclose(f);
+    }
 }
 
 // Thread function for patching Navicat
 DWORD WINAPI NavicatPatchThread(LPVOID lpParam) {
     (void)lpParam;
 
-    // Wait for Navicat to fully initialize
-    Sleep(100);
+    log_message("Patch thread started");
 
-    // Apply patches
-    patch_navicat();
+    // Wait for Navicat to fully initialize
+    Sleep(500);
+
+    // Apply patches for Navicat 17
+    if (patch_navicat17()) {
+        log_message("Patches applied successfully");
+    } else {
+        log_message("Failed to apply patches");
+    }
 
     return 0;
 }
@@ -163,20 +165,20 @@ void hooks_init(void) {
     load_all_original_functions();
 
     // Check if we're running in navicat.exe
-    char exePath[MAX_PATH];
-    char exeName[MAX_PATH];
+    wchar_t exePath[MAX_PATH];
+    wchar_t exeName[MAX_PATH];
 
-    if (GetModuleFileNameA(NULL, exePath, MAX_PATH)) {
+    if (GetModuleFileNameW(NULL, exePath, MAX_PATH)) {
         // Extract filename from path
-        char* filename = strrchr(exePath, '\\');
+        wchar_t* filename = wcsrchr(exePath, L'\\');
         if (filename) {
-            strcpy(exeName, filename + 1);
+            wcscpy_s(exeName, MAX_PATH, filename + 1);
         } else {
-            strcpy(exeName, exePath);
+            wcscpy_s(exeName, MAX_PATH, exePath);
         }
 
         // Check if it's navicat.exe (case insensitive)
-        if (_stricmp(exeName, "navicat.exe") == 0) {
+        if (_wcsicmp(exeName, L"navicat.exe") == 0) {
             // Create thread to patch Navicat
             HANDLE hThread = CreateThread(NULL, 0, NavicatPatchThread, NULL, 0, NULL);
             if (hThread) {
@@ -202,5 +204,5 @@ BOOL WINAPI PlaySoundA_hook(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound) {
     return FALSE;
 }
 
-// ImageBase for GetModuleFileNameW
-extern IMAGE_DOS_HEADER __ImageBase;
+// Hooked PlaySound (forward to PlaySoundW)
+BOOL WINAPI PlaySoundW_hook(LPCWSTR pszSound, HMODULE hmod, DWORD fdwSound);
